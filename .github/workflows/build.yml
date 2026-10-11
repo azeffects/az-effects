@@ -1,0 +1,60 @@
+name: Build Setup.exe
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'myapp.zip'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Code checkout
+        uses: actions/checkout@v4
+
+      - name: Source unzip karein
+        shell: pwsh
+        run: Expand-Archive -Path myapp.zip -DestinationPath src -Force
+
+      - name: Version parhein
+        id: ver
+        shell: pwsh
+        working-directory: src/myapp
+        run: |
+          $v = (Select-String -Path pipeline.py -Pattern 'PIPELINE_VERSION = "([^"]+)"').Matches.Groups[1].Value
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Python 3.12 setup
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Libraries install karein
+        shell: pwsh
+        working-directory: src/myapp
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: EXE banao (PyInstaller)
+        shell: pwsh
+        working-directory: src/myapp
+        run: |
+          pyinstaller --onefile --windowed --name "AZEffects" --icon=icon.ico --add-data "static;static" desktop.py
+
+      - name: Installer banao (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup -y
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion="${{ steps.ver.outputs.version }}" src/myapp/installer.iss
+
+      - name: Release banao
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          files: src/Output/AZEffects-Setup-*.exe
